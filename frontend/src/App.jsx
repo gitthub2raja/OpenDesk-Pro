@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from './contexts/AuthContext'
 import { SSOProvider } from './contexts/SSOContext'
@@ -48,8 +48,22 @@ import { UpgradePlan } from './pages/Upgrade/UpgradePlan'
 // Reports Page
 import { Reports } from './pages/Reports'
 
+// Landing & Activation Pages
+import { Landing } from './pages/Landing'
+import { ProActivation } from './pages/ProActivation'
+
 // Components
 import { ChatWidget } from './components/ChatWidget'
+
+// Wrapper to conditionally show ChatWidget
+const ConditionalChatWidget = () => {
+  const location = useLocation();
+  const publicRoutes = ['/', '/activate', '/login', '/mfa-login', '/sso/azure', '/sso/google'];
+  const isPublicRoute = publicRoutes.includes(location.pathname);
+  
+  if (isPublicRoute) return null;
+  return <ChatWidget />;
+};
 
 function App() {
   return (
@@ -59,7 +73,7 @@ function App() {
           <Router>
           <ErrorBoundary>
           <div className="App">
-            <ChatWidget />
+            <ConditionalChatWidget />
             <Toaster 
               position="top-right"
               toastOptions={{
@@ -98,6 +112,8 @@ function App() {
             />
             <Routes>
               {/* Public Routes */}
+            <Route path="/" element={<Landing />} />
+            <Route path="/activate" element={<ProActivation />} />
             <Route path="/login" element={<Login />} />
             <Route path="/mfa-login" element={<MFALogin />} />
             <Route path="/sso/azure" element={<AzureLogin />} />
@@ -340,8 +356,7 @@ function App() {
             />
 
             {/* Default Route */}
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
         </ErrorBoundary>
