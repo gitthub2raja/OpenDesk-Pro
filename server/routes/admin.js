@@ -4,8 +4,11 @@ import EmailSettings from '../models/EmailSettings.js'
 import Logo from '../models/Logo.js'
 import Role from '../models/Role.js'
 import SLAPolicy from '../models/SLAPolicy.js'
+import Organization from '../models/Organization.js'
 import { protect, admin } from '../middleware/auth.js'
 import { checkFeature } from '../middleware/checkFeature.js'
+import { getLicenseState, checkLicense } from '../services/licenseService.js'
+import { createLockFile, checkLockFile } from '../services/lockFileService.js'
 
 const router = express.Router()
 
@@ -397,6 +400,173 @@ router.delete('/sla/:id', protect, admin, checkFeature('SLA_MANAGER'), async (re
     res.json({ message: 'SLA Policy deleted successfully' })
   } catch (error) {
     res.status(500).json({ message: error.message })
+  }
+})
+
+// License Status Route
+router.get('/license-status', protect, admin, async (req, res) => {
+  try {
+    // Re-check license
+    checkLicense()
+    const licenseState = getLicenseState()
+    
+    res.json({
+      isValid: licenseState.isValid,
+      isPro: licenseState.isPro,
+      licenseId: licenseState.licenseData?.id || null,
+      product: licenseState.licenseData?.product || null,
+      tier: licenseState.licenseData?.tier || null,
+      validity: licenseState.licenseData?.validity || null,
+      lastChecked: licenseState.lastChecked
+    })
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Manual License Check Route (Image-Based - No DB Updates)
+router.post('/license-check', protect, admin, async (req, res) => {
+  try {
+    // Re-check license file (image-based, no database updates)
+    checkLicense()
+    const licenseState = getLicenseState()
+    
+    res.json({
+      success: true,
+      licenseState: {
+        isValid: licenseState.isValid,
+        isPro: licenseState.isPro,
+        licenseId: licenseState.licenseData?.id || null,
+        product: licenseState.licenseData?.product || null,
+        tier: licenseState.licenseData?.tier || null,
+        validity: licenseState.licenseData?.validity || null,
+        lastChecked: licenseState.lastChecked
+      },
+      message: licenseState.isPro 
+        ? 'Pro features active (image-based activation)' 
+        : 'Basic features active (no Pro license in image)'
+    })
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Activate License via Mathematical Validation
+router.post('/activate-license', protect, admin, async (req, res) => {
+  try {
+    const { licenseKey } = req.body
+
+    // Validate input is a number
+    if (!licenseKey || (typeof licenseKey !== 'number' && typeof licenseKey !== 'string')) {
+      return res.status(400).json({ message: 'License key is required and must be a number' })
+    }
+
+    // Convert to number if string
+    const inputKey = typeof licenseKey === 'string' ? parseFloat(licenseKey.trim()) : licenseKey
+    
+    if (isNaN(inputKey) || !isFinite(inputKey)) {
+      return res.status(400).json({ message: 'License key must be a valid number' })
+    }
+
+    // Calculate expected license key using formula: ((Current_Day * Current_Month * Current_Year) * Current_Year)
+    const now = new Date()
+    const currentDay = now.getUTCDate()
+    const currentMonth = now.getUTCMonth() + 1 // getUTCMonth() returns 0-11, so add 1
+    const currentYear = now.getUTCFullYear()
+    
+    // Formula: ((day * month * year) * year)
+    const expectedKey = ((currentDay * currentMonth * currentYear) * currentYear)
+    
+    console.log(`[Activate License] Validation attempt:`)
+    console.log(`  Current Date (UTC): ${currentDay}/${currentMonth}/${currentYear}`)
+    console.log(`  Input Key: ${inputKey}`)
+    console.log(`  Expected Key: ${expectedKey}`)
+    console.log(`  Formula: ((${currentDay} * ${currentMonth} * ${currentYear}) * ${currentYear}) = ${expectedKey}`)
+
+    // Validate the input matches the calculated key
+    if (inputKey !== expectedKey) {
+      return res.status(400).json({ 
+        message: 'Invalid or Expired Key',
+        hint: `Expected: ${expectedKey} (calculated from current date)`
+      })
+    }
+
+    // Get user's organization
+    const user = req.user
+    if (!user.organization) {
+      return res.status(400).json({ message: 'User is not associated with an organization' })
+    }
+
+    const orgId = typeof user.organization === 'object' 
+      ? user.organization._id || user.organization.id
+      : user.organization
+
+    // Get organization name before update
+    const existingOrg = await Organization.findById(orgId)
+    if (!existingOrg) {
+      return res.status(404).json({ message: 'Organization not found' })
+    }
+
+    // Create filesystem lock file FIRST (destructive activation)
+    // This is the source of truth - if this fails, don't activate
+    const lockCreated = createLockFile({
+      date: now.toISOString(),
+      organizationId: orgId.toString(),
+      organizationName: existingOrg.name
+    })
+
+    if (!lockCreated) {
+      return res.status(500).json({ 
+        message: 'Failed to create lock file. Activation aborted. Please try again.' 
+      })
+    }
+
+    // Update organization to PRO plan (keep plan in DB for reference, but Pro status relies on lock file)
+    const organization = await Organization.findByIdAndUpdate(
+      orgId,
+      {
+        $set: {
+          plan: 'PRO',
+          paymentStatus: 'VERIFIED',
+          subscriptionExpiry: null
+        },
+        // Remove license trace (destructive activation)
+        $unset: {
+          paymentReference: '',
+          paymentScreenshot: ''
+        }
+      },
+      { new: true }
+    )
+
+    if (!organization) {
+      // Lock file created but org update failed - delete lock file to maintain consistency
+      const { deleteLockFile } = await import('../services/lockFileService.js')
+      deleteLockFile()
+      return res.status(404).json({ message: 'Organization not found. Lock file removed.' })
+    }
+
+    console.log(`[Activate License] ✅ Destructive activation complete for organization: ${organization.name} (${organization._id})`)
+    console.log(`[Activate License] ⚠️  License trace removed from database. Pro status now relies on lock file.`)
+    
+    res.json({
+      success: true,
+      message: 'Pro license activated successfully. License trace removed from database.',
+      organization: {
+        id: organization._id,
+        name: organization.name,
+        plan: organization.plan,
+        paymentStatus: organization.paymentStatus
+      },
+      warning: 'Pro status is now filesystem-based. If lock file is lost, you must purchase again.'
+    })
+  } catch (error) {
+    console.error('[Activate License] Error:', error)
+    const errorMessage = error.message || 'Failed to activate license'
+    res.status(500).json({ 
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    })
   }
 })
 

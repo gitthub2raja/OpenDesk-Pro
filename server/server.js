@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import connectDB from './config/database.js'
 import createDemoData from './scripts/initDemoData.js'
+import { initializeLicense } from './services/licenseService.js'
 import { startEmailWorker } from './workers/emailWorker.js'
 import { startSLAWorker } from './workers/slaWorker.js'
 import { startEmailAutomationWorker } from './workers/emailAutomationWorker.js'
@@ -38,8 +39,12 @@ dotenv.config()
 
 const app = express()
 
+// Initialize file-based license check first (before DB connection)
+initializeLicense()
+
 // Connect to MongoDB
 connectDB().then(() => {
+  
   // Create demo data after DB connection
   setTimeout(() => {
     createDemoData()

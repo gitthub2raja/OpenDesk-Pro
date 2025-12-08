@@ -41,6 +41,7 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
     volumes:
       - ./server/uploads:/app/uploads
+      - ./License:/app/License
     depends_on:
       mongodb:
         condition: service_healthy

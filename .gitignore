@@ -1,0 +1,34 @@
+# Decrypted temporary files
+.MASTER.sh.decrypted
+.MASTER.md.decrypted
+
+# Node modules
+node_modules/
+server/node_modules/
+frontend/node_modules/
+
+# Build outputs
+server/dist/
+frontend/dist/
+
+# Environment files
+.env
+.env.local
+server/.env
+frontend/.env
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# License file (user-specific)
+License/license.json
+

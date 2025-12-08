@@ -54,8 +54,8 @@ router.post('/login', async (req, res) => {
       })
     }
 
-    // Populate organization before returning
-    await user.populate('organization', 'name domain')
+    // Populate organization before returning (include plan and paymentStatus)
+    await user.populate('organization', 'name domain plan paymentStatus')
 
     // If MFA is not enabled, return full token
     res.json({
@@ -80,6 +80,9 @@ router.post('/login', async (req, res) => {
 // @access  Private
 router.get('/me', protect, async (req, res) => {
   try {
+    // Populate organization with plan and paymentStatus
+    await req.user.populate('organization', 'name domain plan paymentStatus')
+    
     res.json({
       id: req.user._id,
       name: req.user.name,

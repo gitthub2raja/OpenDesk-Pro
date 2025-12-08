@@ -379,6 +379,14 @@ export const adminAPI = {
     
     return response.json()
   },
+  
+  // License Activation
+  activateLicense: async (licenseKey) => {
+    return apiCall('/admin/activate-license', {
+      method: 'POST',
+      body: JSON.stringify({ licenseKey }),
+    })
+  },
 }
 
 // Organizations API

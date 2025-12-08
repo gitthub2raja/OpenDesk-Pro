@@ -14,6 +14,8 @@
  */
 
 import Organization from '../models/Organization.js'
+import { isProEnabled } from '../services/licenseService.js'
+import { checkLockFile } from '../services/lockFileService.js'
 
 // Feature to plan mapping
 const FEATURE_PLAN_REQUIREMENTS = {
@@ -62,21 +64,36 @@ export const checkFeature = (featureName) => {
       // Check if feature requires PRO plan
       const requiredPlan = FEATURE_PLAN_REQUIREMENTS[featureName]
       
-      if (requiredPlan === 'PRO' && organization.plan !== 'PRO') {
-        // Check if subscription is expired
-        if (organization.subscriptionExpiry && new Date() > organization.subscriptionExpiry) {
+      if (requiredPlan === 'PRO') {
+        // Priority 1: Check lock file (destructive activation - highest priority)
+        const lockFileActive = checkLockFile()
+        if (lockFileActive) {
+          return next()
+        }
+        
+        // Priority 2: Check file-based license (image-based activation)
+        const fileLicenseActive = isProEnabled()
+        if (fileLicenseActive) {
+          return next()
+        }
+        
+        // Priority 3: Check database plan (fallback)
+        if (organization.plan !== 'PRO') {
+          // Check if subscription is expired
+          if (organization.subscriptionExpiry && new Date() > organization.subscriptionExpiry) {
+            return res.status(403).json({ 
+              message: 'Your Pro subscription has expired. Please renew to access this feature.',
+              requiresUpgrade: true,
+              subscriptionExpired: true
+            })
+          }
+
           return res.status(403).json({ 
-            message: 'Your Pro subscription has expired. Please renew to access this feature.',
+            message: 'This feature requires a Pro upgrade. If you previously activated, the lock file may be missing. You must purchase again.',
             requiresUpgrade: true,
-            subscriptionExpired: true
+            feature: featureName
           })
         }
-
-        return res.status(403).json({ 
-          message: 'This feature requires a Pro upgrade.',
-          requiresUpgrade: true,
-          feature: featureName
-        })
       }
 
       // Feature is accessible
@@ -100,7 +117,17 @@ export const hasFeatureAccess = (organization, featureName) => {
   const requiredPlan = FEATURE_PLAN_REQUIREMENTS[featureName]
   
   if (requiredPlan === 'PRO') {
-    // Check if plan is PRO
+    // Priority 1: Check lock file (destructive activation - highest priority)
+    if (checkLockFile()) {
+      return true
+    }
+    
+    // Priority 2: Check file-based license (image-based activation)
+    if (isProEnabled()) {
+      return true
+    }
+    
+    // Priority 3: Check database plan (fallback)
     if (organization.plan !== 'PRO') return false
     
     // Check if subscription is expired
