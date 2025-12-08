@@ -23,15 +23,6 @@ export const Settings = () => {
   const [licenseKey, setLicenseKey] = useState('')
   const [activating, setActivating] = useState(false)
   
-  // Calculate current expected key for display (optional helper)
-  const getCurrentExpectedKey = () => {
-    const now = new Date()
-    const day = now.getUTCDate()
-    const month = now.getUTCMonth() + 1
-    const year = now.getUTCFullYear()
-    return ((day * month * year) * year)
-  }
-  
   // Check database plan (not file-based license) to determine if activation should be shown
   const dbPlan = user?.organization && typeof user.organization === 'object' 
     ? user.organization.plan 
@@ -446,17 +437,11 @@ export const Settings = () => {
                 type="number"
                 value={licenseKey}
                 onChange={(e) => setLicenseKey(e.target.value)}
-                placeholder={`Example: ${getCurrentExpectedKey()}`}
+                placeholder="Enter license key"
                 className="w-full text-lg font-mono"
                 min="0"
                 step="1"
               />
-              <p className="mt-2 text-xs text-gray-500">
-                Formula: <code className="bg-gray-100 px-1 rounded">((Day × Month × Year) × Year)</code> using UTC date
-              </p>
-              <p className="mt-1 text-xs text-blue-600">
-                Today's expected key: <strong>{getCurrentExpectedKey().toLocaleString()}</strong>
-              </p>
             </div>
 
             <div className="flex gap-2 justify-end pt-2">
